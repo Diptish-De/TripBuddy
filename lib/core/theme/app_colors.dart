@@ -11,6 +11,14 @@ class AppColors {
   static const Color surfaceLight = Color(0xFF1A2138);
   static const Color surfaceBright = Color(0xFF222B45);
 
+  // ── Light Theme Colors ──
+  static const Color backgroundLight = Color(0xFFF6F8FC);
+  static const Color surfaceLightBg = Color(0xFFFFFFFF);
+  static const Color borderLight = Color(0xFFE2E8F0);
+  static const Color textPrimaryLight = Color(0xFF0F172A);
+  static const Color textSecondaryLight = Color(0xFF475569);
+  static const Color textTertiaryLight = Color(0xFF94A3B8);
+
   // ── Primary Gradient ──
   static const Color primaryPurple = Color(0xFF6C63FF);
   static const Color primaryCyan = Color(0xFF00D9FF);

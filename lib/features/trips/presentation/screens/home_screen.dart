@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/avatar_stack.dart';
 import '../../../../core/widgets/glass_card.dart';
@@ -15,6 +16,7 @@ import '../../domain/trip_entity.dart';
 import '../../../itinerary/domain/itinerary_item_entity.dart';
 import '../../../itinerary/presentation/providers/itinerary_provider.dart';
 import '../../../expenses/presentation/providers/expense_provider.dart';
+import '../../../expenses/domain/expense_entity.dart';
 import '../../../packing/presentation/providers/packing_provider.dart';
 import '../../../notes/presentation/providers/notes_provider.dart';
 import '../../../voting/presentation/providers/voting_provider.dart';
@@ -33,7 +35,7 @@ class HomeScreen extends ConsumerWidget {
     final past = trips.where((t) => t.isPast).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -63,6 +65,27 @@ class HomeScreen extends ConsumerWidget {
                         ],
                       ),
                     ),
+                    // Theme Switcher Button
+                    IconButton(
+                      icon: Icon(
+                        ref.watch(themeModeProvider) == ThemeMode.dark
+                            ? Icons.light_mode_rounded
+                            : Icons.dark_mode_rounded,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? AppColors.primaryCyan
+                            : AppColors.primaryPurple,
+                      ),
+                      onPressed: () {
+                        final current = ref.read(themeModeProvider);
+                        ref.read(themeModeProvider.notifier).state =
+                            current == ThemeMode.dark
+                                ? ThemeMode.light
+                                : ThemeMode.dark;
+                      },
+                    ).animate(delay: 150.ms).fadeIn(),
+                    
+                    const SizedBox(width: 8),
+
                     // Profile avatar
                     GestureDetector(
                           onTap: () => _showProfileMenu(context, ref),
@@ -174,43 +197,115 @@ class HomeScreen extends ConsumerWidget {
   }
 
   void _showProfileMenu(BuildContext context, WidgetRef ref) {
+    final authState = ref.read(authProvider);
+    final nameCtrl = TextEditingController(text: authState.user?.displayName ?? '');
+    final emailCtrl = TextEditingController(text: authState.backupEmail ?? '');
+
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(
-                Icons.person_outline,
-                color: AppColors.textSecondary,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.settings_outlined, color: AppColors.primaryPurple, size: 24),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Profile & Backup Settings',
+                    style: AppTypography.headlineSmall.copyWith(
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? AppColors.textPrimary
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                ],
               ),
-              title: Text(
-                'Profile',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: AppColors.textPrimary,
+              const SizedBox(height: 20),
+              TextField(
+                controller: nameCtrl,
+                style: TextStyle(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.textPrimary
+                      : AppColors.textPrimaryLight,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Display Name',
+                  hintText: 'e.g. Alex Traveler',
+                  prefixIcon: Icon(Icons.person_outline_rounded),
                 ),
               ),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.logout_rounded,
-                color: AppColors.accent,
-              ),
-              title: Text(
-                'Sign Out',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: AppColors.accent,
+              const SizedBox(height: 16),
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                style: TextStyle(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.textPrimary
+                      : AppColors.textPrimaryLight,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Backup Email',
+                  hintText: 'your@email.com',
+                  prefixIcon: Icon(Icons.mail_outline_rounded),
                 ),
               ),
-              onTap: () {
-                ref.read(authProvider.notifier).logout();
-                Navigator.pop(context);
-              },
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                'Provide your email address for cloud backup and account restoration purposes.',
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 24),
+              GradientButton(
+                text: 'Save Profile',
+                icon: Icons.save_rounded,
+                isLoading: ref.watch(authProvider).isLoading,
+                onPressed: () async {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  await ref.read(authProvider.notifier).updateProfile(
+                        nameCtrl.text.trim(),
+                        emailCtrl.text.trim(),
+                      );
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Profile saved! 💾'),
+                      ),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await ref.read(authProvider.notifier).logout();
+                },
+                icon: const Icon(Icons.logout_rounded, color: AppColors.error, size: 20),
+                label: Text(
+                  authState.isDemo ? 'Exit Demo Mode' : 'Sign Out',
+                  style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  side: BorderSide(color: AppColors.error.withValues(alpha: 0.4)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -293,8 +388,9 @@ class HomeScreen extends ConsumerWidget {
                               const Duration(days: 365),
                             ),
                           );
-                          if (picked != null)
+                          if (picked != null) {
                             setSheetState(() => startDate = picked);
+                          }
                         },
                         child: _DateChip(label: 'Start', date: startDate),
                       ),
@@ -311,8 +407,9 @@ class HomeScreen extends ConsumerWidget {
                               const Duration(days: 365),
                             ),
                           );
-                          if (picked != null)
+                          if (picked != null) {
                             setSheetState(() => endDate = picked);
+                          }
                         },
                         child: _DateChip(label: 'End', date: endDate),
                       ),
@@ -325,8 +422,9 @@ class HomeScreen extends ConsumerWidget {
                   icon: Icons.rocket_launch_rounded,
                   onPressed: () {
                     if (nameCtrl.text.trim().isEmpty ||
-                        destCtrl.text.trim().isEmpty)
+                        destCtrl.text.trim().isEmpty) {
                       return;
+                    }
                     ref
                         .read(tripsProvider.notifier)
                         .addTrip(
@@ -763,17 +861,17 @@ class _TripDashboardState extends ConsumerState<_TripDashboard> {
   Widget build(BuildContext context) {
     final trip = ref.watch(tripByIdProvider(widget.tripId));
     if (trip == null) {
-      return const Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(child: Text('Trip not found')),
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(child: Text('Trip not found')),
       );
     }
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       extendBody: true,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.pop(context),
@@ -1394,8 +1492,9 @@ class _ItineraryTab extends ConsumerWidget {
                           trip?.endDate ??
                           DateTime.now().add(const Duration(days: 365)),
                     );
-                    if (picked != null)
+                    if (picked != null) {
                       setSheetState(() => selectedDate = picked);
+                    }
                   },
                   child: _DateChip(label: 'Date', date: selectedDate),
                 ),
@@ -1404,7 +1503,9 @@ class _ItineraryTab extends ConsumerWidget {
                   text: 'Add to Itinerary',
                   icon: Icons.add_rounded,
                   onPressed: () {
-                    if (titleCtrl.text.trim().isEmpty) return;
+                    if (titleCtrl.text.trim().isEmpty) {
+                      return;
+                    }
                     ref
                         .read(itineraryProvider(tripId).notifier)
                         .addItem(
@@ -1458,226 +1559,600 @@ class _ExpensesTab extends ConsumerWidget {
     return Stack(
       children: [
         ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 100),
           children: [
-            // ── Total Card ──
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primaryPurple.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Total Expenses',
-                    style: AppTypography.bodySmall.copyWith(
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    AppFormatters.currency(total),
-                    style: AppTypography.amountLarge.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: byCategory.entries
-                        .map(
-                          (e) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${e.key[0].toUpperCase()}${e.key.substring(1)}: ${AppFormatters.currency(e.value)}',
-                              style: AppTypography.caption.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-              ),
-            ).animate().fadeIn().slideY(begin: 0.1),
-
-            // ── Balances ──
-            if (balances.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Text(
-                'Settlements',
-                style: AppTypography.headlineSmall.copyWith(
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...balances.map(
-                (b) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: AppColors.accent.withValues(
-                          alpha: 0.2,
-                        ),
-                        child: Text(
-                          AppFormatters.initials(b.fromUserName),
-                          style: AppTypography.caption.copyWith(
-                            color: AppColors.accent,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            RichText(
-                              text: TextSpan(
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: AppColors.textPrimary,
-                                ),
-                                children: [
-                                  TextSpan(
-                                    text: b.fromUserName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const TextSpan(text: ' owes '),
-                                  TextSpan(
-                                    text: b.toUserName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        AppFormatters.currency(b.amount),
-                        style: AppTypography.amountSmall.copyWith(
-                          color: AppColors.accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-
-            // ── Expense List ──
-            const SizedBox(height: 20),
-            Text(
-              'All Expenses',
-              style: AppTypography.headlineSmall.copyWith(
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...expenses.asMap().entries.map((entry) {
-              final e = entry.value;
-              final color = AppColors.getCategoryColor(e.category);
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(14),
+            // ── Total & Summary Card ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withValues(alpha: 0.15)),
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryPurple.withValues(alpha: 0.25),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        AppColors.getCategoryIcon(e.category),
-                        size: 20,
-                        color: color,
+                    Text(
+                      'Total Expenses',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 4),
+                    Text(
+                      AppFormatters.currency(total),
+                      style: AppTypography.amountLarge.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: byCategory.entries
+                          .map(
+                            (e) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${e.key[0].toUpperCase()}${e.key.substring(1)}: ${AppFormatters.currency(e.value)}',
+                                style: AppTypography.caption.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn().slideY(begin: 0.1),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── Paywise Pending Bills Slider ──
+            _buildPendingBills(expenses),
+
+            // ── Settlements ──
+            if (balances.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Settlements Needed',
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: balances.map(
+                    (b) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                      ),
+                      child: Row(
                         children: [
-                          Text(
-                            e.title,
-                            style: AppTypography.labelMedium.copyWith(
-                              color: AppColors.textPrimary,
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor: AppColors.accent.withValues(alpha: 0.15),
+                            child: Text(
+                              AppFormatters.initials(b.fromUserName),
+                              style: AppTypography.labelMedium.copyWith(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
-                          Text(
-                            'Paid by ${e.paidByName}',
-                            style: AppTypography.caption.copyWith(
-                              color: AppColors.textTertiary,
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.swap_horiz_rounded,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor: AppColors.success.withValues(alpha: 0.15),
+                            child: Text(
+                              AppFormatters.initials(b.toUserName),
+                              style: AppTypography.labelMedium.copyWith(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${b.fromUserName.split(' ').first} owes ${b.toUserName.split(' ').first}',
+                                  style: AppTypography.labelMedium.copyWith(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  'Pending payment',
+                                  style: AppTypography.caption.copyWith(
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                AppFormatters.currency(b.amount),
+                                style: AppTypography.amountSmall.copyWith(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              InkWell(
+                                onTap: () => _confirmSettleDebt(context, ref, b),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(
+                                    'Settle Up',
+                                    style: AppTypography.caption.copyWith(
+                                      color: AppColors.success,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-                    Text(
-                      AppFormatters.currency(e.amount),
-                      style: AppTypography.amountSmall.copyWith(
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
+                  ).toList(),
                 ),
-              ).animate(delay: Duration(milliseconds: 50 * entry.key)).fadeIn();
-            }),
+              ),
+            ],
+
+            // ── Completed/All Expenses List ──
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Completed Bills',
+                style: AppTypography.headlineSmall.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: expenses.asMap().entries.map((entry) {
+                  final e = entry.value;
+                  return _buildCompletedBillItem(e)
+                      .animate(delay: Duration(milliseconds: 40 * entry.key))
+                      .fadeIn();
+                }).toList(),
+              ),
+            ),
           ],
         ),
         Positioned(
-          right: 16,
+          right: 20,
           bottom: 96,
           child: FloatingActionButton(
             heroTag: 'expense_fab',
             onPressed: () => _showAddExpense(context, ref),
-            child: const Icon(Icons.add_rounded),
+            backgroundColor: AppColors.primaryPurple,
+            child: const Icon(Icons.add_rounded, color: Colors.white),
           ),
         ),
       ],
     );
   }
 
+  Widget _buildPendingBills(List<ExpenseEntity> expenses) {
+    if (expenses.isEmpty) return const SizedBox.shrink();
+    final pending = expenses.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Text(
+            'Pending Bills',
+            style: AppTypography.headlineSmall.copyWith(
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 164,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: pending.length,
+            itemBuilder: (context, index) {
+              final e = pending[index];
+              final color = AppColors.getCategoryColor(e.category);
+              
+              final Gradient cardGradient;
+              if (index % 3 == 0) {
+                cardGradient = const LinearGradient(
+                  colors: [Color(0xFF1E2640), Color(0xFF12182B)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                );
+              } else if (index % 3 == 1) {
+                cardGradient = const LinearGradient(
+                  colors: [Color(0xFF5E5425), Color(0xFF2E2812)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                );
+              } else {
+                cardGradient = const LinearGradient(
+                  colors: [Color(0xFF0F3628), Color(0xFF071C14)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                );
+              }
+
+              return Container(
+                width: 220,
+                margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: cardGradient,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            e.category.toUpperCase(),
+                            style: AppTypography.caption.copyWith(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          AppColors.getCategoryIcon(e.category),
+                          color: color,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      e.title,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      AppFormatters.currency(e.amount),
+                      style: AppTypography.amountSmall.copyWith(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildMemberAvatars(e.splits.map((s) => s.userName).toList()),
+                        Text(
+                          '1 of ${e.splits.length} paid',
+                          style: AppTypography.caption.copyWith(
+                            color: Colors.white54,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMemberAvatars(List<String> names) {
+    final count = names.length;
+    final displayCount = count > 3 ? 3 : count;
+    
+    return SizedBox(
+      width: 60,
+      height: 24,
+      child: Stack(
+        children: [
+          for (int index = 0; index < displayCount; index++)
+            Positioned(
+              left: index * 12.0,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.surfaceLight,
+                  border: Border.all(color: Colors.white24, width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    AppFormatters.initials(names[index]),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (count > 3)
+            Positioned(
+              left: 3 * 12.0,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.surfaceBright,
+                  border: Border.all(color: Colors.white24, width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    '+${count - 3}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompletedBillItem(ExpenseEntity e) {
+    final color = AppColors.getCategoryColor(e.category);
+    final isPaidByMe = e.paidBy == MockData.currentUser.id;
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              AppColors.getCategoryIcon(e.category),
+              size: 20,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  e.title,
+                  style: AppTypography.labelLarge.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 8,
+                      backgroundColor: Colors.white24,
+                      child: Text(
+                        AppFormatters.initials(e.paidByName),
+                        style: const TextStyle(fontSize: 6, color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_rounded, size: 10, color: AppColors.textTertiary),
+                    const SizedBox(width: 4),
+                    Text(
+                      isPaidByMe ? 'Squad' : 'You',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                AppFormatters.currency(e.amount),
+                style: AppTypography.amountSmall.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isPaidByMe
+                      ? AppColors.success.withValues(alpha: 0.12)
+                      : AppColors.warning.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  isPaidByMe ? 'All Paid' : 'You Owe',
+                  style: AppTypography.caption.copyWith(
+                    color: isPaidByMe ? AppColors.success : AppColors.warning,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 9,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSettleDebt(BuildContext context, WidgetRef ref, BalanceEntry balance) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.handshake_outlined, color: AppColors.success, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Confirm Settlement',
+              style: AppTypography.headlineSmall.copyWith(color: AppColors.textPrimary),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Record payment of ${AppFormatters.currency(balance.amount)} from ${balance.fromUserName} to ${balance.toUserName}?',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This will mark this shared debt as settled.',
+              style: AppTypography.caption.copyWith(color: AppColors.textTertiary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textTertiary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await ref.read(expensesProvider(tripId).notifier).settleDebt(
+                    fromUserId: balance.fromUserId,
+                    fromUserName: balance.fromUserName,
+                    toUserId: balance.toUserId,
+                    toUserName: balance.toUserName,
+                    amount: balance.amount,
+                  );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Settlement of ${AppFormatters.currency(balance.amount)} recorded! 💸'),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Mark as Paid'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddExpense(BuildContext context, WidgetRef ref) {
     final titleCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
+    final taxCtrl = TextEditingController(text: '0');
+    final serviceCtrl = TextEditingController(text: '0');
+    final discountCtrl = TextEditingController(text: '0');
+    
     String category = 'food';
     final categories = [
       'food',
@@ -1690,103 +2165,287 @@ class _ExpensesTab extends ConsumerWidget {
     final trip = ref.read(tripByIdProvider(tripId));
     final members = trip?.members ?? [];
 
+    final selectedMemberIds = List<String>.from(members.map((m) => m.userId));
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              24,
-              24,
-              MediaQuery.of(context).viewInsets.bottom + 24,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add Expense',
-                  style: AppTypography.headlineMedium.copyWith(
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: titleCtrl,
-                  style: AppTypography.bodyLarge.copyWith(
-                    color: AppColors.textPrimary,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'What was it for?',
-                    hintText: 'e.g. Dinner, Taxi, Hotel',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: amountCtrl,
-                  style: AppTypography.amountMedium.copyWith(
-                    color: AppColors.textPrimary,
-                  ),
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Amount',
-                    prefixText: '₹ ',
-                    prefixStyle: AppTypography.amountMedium.copyWith(
-                      color: AppColors.primaryCyan,
+        builder: (context, setSheetState) {
+          double baseAmount = double.tryParse(amountCtrl.text) ?? 0;
+          double tax = double.tryParse(taxCtrl.text) ?? 0;
+          double service = double.tryParse(serviceCtrl.text) ?? 0;
+          double discount = double.tryParse(discountCtrl.text) ?? 0;
+
+          double taxAmount = baseAmount * (tax / 100);
+          double serviceAmount = baseAmount * (service / 100);
+          double grandTotal = baseAmount + taxAmount + serviceAmount - discount;
+          if (grandTotal < 0) grandTotal = 0;
+
+          return SingleChildScrollView(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 48,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  children: categories.map((c) {
-                    final isSelected = category == c;
-                    return ChoiceChip(
-                      label: Text(c[0].toUpperCase() + c.substring(1)),
-                      selected: isSelected,
-                      onSelected: (_) => setSheetState(() => category = c),
-                      selectedColor: AppColors.getCategoryColor(
-                        c,
-                      ).withValues(alpha: 0.2),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Split equally among all ${members.length} members',
-                  style: AppTypography.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
+                  const SizedBox(height: 16),
+                  Text(
+                    'Create Split Bill',
+                    style: AppTypography.headlineMedium.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                GradientButton(
-                  text: 'Add Expense',
-                  icon: Icons.add_rounded,
-                  onPressed: () {
-                    if (titleCtrl.text.trim().isEmpty ||
-                        amountCtrl.text.trim().isEmpty)
-                      return;
-                    final amount = double.tryParse(amountCtrl.text.trim());
-                    if (amount == null || amount <= 0) return;
-                    ref
-                        .read(expensesProvider(tripId).notifier)
-                        .addExpense(
-                          title: titleCtrl.text.trim(),
-                          amount: amount,
-                          category: category,
-                          paidBy: MockData.currentUser.id,
-                          paidByName: MockData.currentUser.displayName,
-                          splitAmong: members.map((m) => m.userId).toList(),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: titleCtrl,
+                    style: AppTypography.bodyLarge.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Bill Name',
+                      hintText: 'e.g. Supermarket, Belanja Bulanan',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountCtrl,
+                    style: AppTypography.amountMedium.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (val) => setSheetState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Base Amount',
+                      prefixText: '₹ ',
+                      prefixStyle: AppTypography.amountMedium.copyWith(
+                        color: AppColors.primaryCyan,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: taxCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (val) => setSheetState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Tax (%)',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: serviceCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (val) => setSheetState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Service (%)',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: discountCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (val) => setSheetState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Discount',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Category',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: categories.map((c) {
+                      final isSelected = category == c;
+                      final cColor = AppColors.getCategoryColor(c);
+                      return ChoiceChip(
+                        label: Text(c[0].toUpperCase() + c.substring(1)),
+                        selected: isSelected,
+                        onSelected: (_) => setSheetState(() => category = c),
+                        selectedColor: cColor.withValues(alpha: 0.2),
+                        labelStyle: TextStyle(
+                          color: isSelected ? cColor : AppColors.textSecondary,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Split With',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 70,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: members.length,
+                      itemBuilder: (context, index) {
+                        final m = members[index];
+                        final isSelected = selectedMemberIds.contains(m.userId);
+                        return GestureDetector(
+                          onTap: () {
+                            setSheetState(() {
+                              if (isSelected) {
+                                if (selectedMemberIds.length > 1) {
+                                  selectedMemberIds.remove(m.userId);
+                                }
+                              } else {
+                                selectedMemberIds.add(m.userId);
+                              }
+                            });
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 12),
+                            child: Column(
+                              children: [
+                                Stack(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: isSelected
+                                          ? AppColors.primaryPurple
+                                          : AppColors.surfaceBright,
+                                      child: Text(
+                                        AppFormatters.initials(m.user?.displayName ?? ''),
+                                        style: TextStyle(
+                                          color: isSelected ? Colors.white : AppColors.textSecondary,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      const Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: CircleAvatar(
+                                          radius: 6,
+                                          backgroundColor: AppColors.success,
+                                          child: Icon(Icons.check, size: 8, color: Colors.white),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  (m.user?.displayName ?? '').split(' ').first,
+                                  style: AppTypography.caption.copyWith(
+                                    color: isSelected ? AppColors.textPrimary : AppColors.textTertiary,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         );
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildBillSummaryRow('Sub Total', baseAmount),
+                        _buildBillSummaryRow('Tax', taxAmount),
+                        _buildBillSummaryRow('Service', serviceAmount),
+                        _buildBillSummaryRow('Discount', -discount),
+                        const Divider(color: Colors.white10),
+                        _buildBillSummaryRow('Grand Total', grandTotal, isTotal: true),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  GradientButton(
+                    text: 'Save Changes',
+                    icon: Icons.check_rounded,
+                    onPressed: () {
+                      if (titleCtrl.text.trim().isEmpty || grandTotal <= 0) return;
+                      final authUser = ref.read(currentUserProvider);
+                      final currentUserId = authUser?.id ?? MockData.currentUser.id;
+                      final currentUserName = authUser?.displayName ?? MockData.currentUser.displayName;
+                      ref
+                          .read(expensesProvider(tripId).notifier)
+                          .addExpense(
+                            title: titleCtrl.text.trim(),
+                            amount: grandTotal,
+                            category: category,
+                            paidBy: currentUserId,
+                            paidByName: currentUserName,
+                            splitAmong: selectedMemberIds,
+                          );
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBillSummaryRow(String label, double val, {bool isTotal = false}) {
+    final style = isTotal
+        ? AppTypography.labelLarge.copyWith(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16)
+        : AppTypography.bodySmall.copyWith(color: AppColors.textSecondary);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: style),
+          Text(
+            AppFormatters.currency(val),
+            style: style.copyWith(
+              color: isTotal ? AppColors.primaryCyan : (val < 0 ? AppColors.accent : AppColors.textPrimary),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1992,6 +2651,11 @@ class _PackingTab extends ConsumerWidget {
       'other',
     ];
 
+    String? assignedTo;
+    String? assignedToName;
+    final trip = ref.read(tripByIdProvider(tripId));
+    final members = trip?.members ?? [];
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2041,6 +2705,44 @@ class _PackingTab extends ConsumerWidget {
                       )
                       .toList(),
                 ),
+                const SizedBox(height: 16),
+                Text(
+                  'Assign To (Optional)',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Shared / Anyone'),
+                        selected: assignedTo == null,
+                        onSelected: (_) => setSheetState(() {
+                          assignedTo = null;
+                          assignedToName = null;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      ...members.map((m) {
+                        final isAssigned = assignedTo == m.userId;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(m.user?.displayName ?? 'Member'),
+                            selected: isAssigned,
+                            onSelected: (_) => setSheetState(() {
+                              assignedTo = m.userId;
+                              assignedToName = m.user?.displayName;
+                            }),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 24),
                 GradientButton(
                   text: 'Add Item',
@@ -2052,6 +2754,8 @@ class _PackingTab extends ConsumerWidget {
                         .addItem(
                           itemName: nameCtrl.text.trim(),
                           category: category,
+                          assignedTo: assignedTo,
+                          assignedToName: assignedToName,
                         );
                     Navigator.pop(context);
                   },
@@ -2310,8 +3014,9 @@ class _NotesView extends ConsumerWidget {
                 icon: Icons.add_rounded,
                 onPressed: () {
                   if (titleCtrl.text.trim().isEmpty ||
-                      contentCtrl.text.trim().isEmpty)
+                      contentCtrl.text.trim().isEmpty) {
                     return;
+                  }
                   ref
                       .read(notesProvider(tripId).notifier)
                       .addNote(
@@ -2655,7 +3360,8 @@ class _ChatTabState extends ConsumerState<_ChatTab> {
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msg = messages[index];
-                    final isMe = msg.userId == MockData.currentUser.id;
+                    final currentUserId = ref.watch(currentUserProvider)?.id ?? MockData.currentUser.id;
+                    final isMe = msg.userId == currentUserId;
                     final isSystem = msg.isSystem;
 
                     if (isSystem) {

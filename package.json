@@ -1,0 +1,14 @@
+{
+  "name": "tripbuddy-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TripBuddy - Collaborative Group Travel App",
+  "scripts": {
+    "dev": "pnpm --dir web-ui dev",
+    "dev:web": "pnpm --dir web-ui dev",
+    "dev:flutter": "flutter run -d chrome",
+    "build:web": "pnpm --dir web-ui build",
+    "preview:web": "pnpm --dir web-ui preview",
+    "install:web": "pnpm --dir web-ui install"
+  }
+}

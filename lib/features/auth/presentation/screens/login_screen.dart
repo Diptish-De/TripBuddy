@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/gradient_button.dart';
@@ -46,6 +47,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _passwordController.text,
       );
     }
+  }
+
+  void _showGoogleAuthDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Google Authentication',
+          style: AppTypography.headlineSmall.copyWith(color: AppColors.textPrimary),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'To use live Google Sign-In with Supabase, you must enable the Google Provider under "Auth -> Providers" in your Supabase Dashboard.',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Would you like to proceed with the Live Redirect, or use a Simulated/Mock Sign-In for testing?',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textTertiary),
+            ),
+          ),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ref.read(authProvider.notifier).signInWithGoogle();
+            },
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.primaryPurple.withValues(alpha: 0.5)),
+            ),
+            child: const Text(
+              'Live Auth',
+              style: TextStyle(color: AppColors.primaryCyan),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ref.read(authProvider.notifier).signInWithGoogleMock();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryPurple,
+            ),
+            child: const Text(
+              'Simulate',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -193,6 +258,73 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 isLoading: authState.isLoading,
               ).animate(delay: 500.ms).fadeIn().slideY(begin: 0.2),
 
+              const SizedBox(height: 20),
+
+              // Divider
+              Row(
+                children: [
+                  Expanded(
+                    child: Divider(
+                      color: AppColors.textTertiary.withValues(alpha: 0.3),
+                      thickness: 1,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'or continue with',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Divider(
+                      color: AppColors.textTertiary.withValues(alpha: 0.3),
+                      thickness: 1,
+                    ),
+                  ),
+                ],
+              ).animate(delay: 550.ms).fadeIn(),
+
+              const SizedBox(height: 20),
+
+              // Google Button
+              OutlinedButton(
+                onPressed: authState.isLoading
+                    ? null
+                    : _showGoogleAuthDialog,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: BorderSide(
+                    color: AppColors.textTertiary.withValues(alpha: 0.3),
+                  ),
+                  minimumSize: const Size(double.infinity, 56),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  backgroundColor: AppColors.surface,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SvgPicture.network(
+                      'https://www.vectorlogo.zone/logos/google/google-icon.svg',
+                      height: 22,
+                      width: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      _isSignUp ? 'Sign up with Google' : 'Sign in with Google',
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ).animate(delay: 600.ms).fadeIn().slideY(begin: 0.2),
+
               const SizedBox(height: 24),
 
               // Toggle
@@ -213,7 +345,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ],
                 ),
-              ).animate(delay: 600.ms).fadeIn(),
+              ).animate(delay: 650.ms).fadeIn(),
+
+              const SizedBox(height: 16),
+
+              // Demo mode button
+              Center(
+                child: TextButton.icon(
+                  onPressed: () async {
+                    await ref.read(authProvider.notifier).continueAsDemo();
+                  },
+                  icon: const Icon(Icons.play_circle_outline_rounded, size: 18, color: AppColors.accent),
+                  label: Text(
+                    'Explore in Demo Mode (Offline)',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: AppColors.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ).animate(delay: 700.ms).fadeIn(),
 
               const SizedBox(height: 40),
             ],

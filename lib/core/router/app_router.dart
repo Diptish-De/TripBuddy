@@ -34,8 +34,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         return isLogin ? null : '/login';
       }
 
-      // Authenticated — redirect away from splash/login
-      if (isSplash || isLogin) return '/';
+      // Authenticated (cloud or demo) — redirect away from splash and login
+      if (isSplash || isLogin) {
+        return '/';
+      }
 
       return null;
     },

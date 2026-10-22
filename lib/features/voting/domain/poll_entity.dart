@@ -63,6 +63,20 @@ class PollOptionEntity {
     if (totalVotes == 0) return 0;
     return votes.length / totalVotes;
   }
+
+  PollOptionEntity copyWith({
+    String? optionText,
+    int? sortOrder,
+    List<PollVoteEntity>? votes,
+  }) {
+    return PollOptionEntity(
+      id: id,
+      pollId: pollId,
+      optionText: optionText ?? this.optionText,
+      sortOrder: sortOrder ?? this.sortOrder,
+      votes: votes ?? this.votes,
+    );
+  }
 }
 
 class PollVoteEntity {

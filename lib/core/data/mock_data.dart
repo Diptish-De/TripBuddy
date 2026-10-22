@@ -17,7 +17,7 @@ class MockData {
   MockData._();
 
   // ── Current User ──
-  static final currentUser = UserEntity(
+  static UserEntity currentUser = UserEntity(
     id: 'user-1',
     displayName: 'Diptish',
     email: 'diptish@example.com',
@@ -59,7 +59,7 @@ class MockData {
     ),
   ];
 
-  static final Map<String, String> userNames = {
+  static Map<String, String> userNames = {
     for (final u in users) u.id: u.displayName,
   };
 

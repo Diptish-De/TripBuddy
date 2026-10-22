@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/data/mock_data.dart';
+import '../../../../core/supabase/supabase_config.dart';
 import '../../domain/poll_entity.dart';
 
 const _uuid = Uuid();
@@ -8,20 +11,110 @@ const _uuid = Uuid();
 class VotingNotifier extends StateNotifier<List<PollEntity>> {
   final String tripId;
 
-  VotingNotifier(this.tripId) : super(MockData.getPolls(tripId));
+  VotingNotifier(this.tripId) : super([]) {
+    loadPolls();
+  }
 
-  void createPoll({
+  SupabaseClient? get _client => SupabaseConfig.client;
+
+  Future<void> loadPolls() async {
+    final client = _client;
+    if (client != null && client.auth.currentUser != null) {
+      try {
+        final response = await client
+            .from('polls')
+            .select('*, options:poll_options(*, votes:poll_votes(*))')
+            .eq('trip_id', tripId)
+            .order('created_at', ascending: false);
+
+        final polls = (response as List).map((map) {
+          final pollId = map['id'] as String;
+          final createdBy = map['created_by'] as String? ?? '';
+          final options = (map['options'] as List? ?? []).map((o) {
+            final optId = o['id'] as String;
+            final votes = (o['votes'] as List? ?? []).map((v) {
+              final uid = v['user_id'] as String;
+              return PollVoteEntity(
+                id: v['id'] as String,
+                optionId: optId,
+                userId: uid,
+                userName: MockData.userNames[uid] ?? 'User',
+              );
+            }).toList();
+
+            return PollOptionEntity(
+              id: optId,
+              pollId: pollId,
+              optionText: o['text'] ?? '',
+              sortOrder: 0,
+              votes: votes,
+            );
+          }).toList();
+
+          return PollEntity(
+            id: pollId,
+            tripId: tripId,
+            question: map['question'] ?? '',
+            allowMultiple: map['is_multiple_choice'] ?? false,
+            isActive: map['is_active'] ?? true,
+            createdBy: createdBy,
+            createdByName: MockData.userNames[createdBy] ?? 'User',
+            createdAt: DateTime.parse(map['created_at'] ?? DateTime.now().toIso8601String()),
+            options: options,
+          );
+        }).toList();
+
+        state = polls;
+        return;
+      } catch (e) {
+        debugPrint('[VotingNotifier] Error loading polls from Supabase: $e');
+      }
+    }
+
+    state = MockData.getPolls(tripId);
+  }
+
+  Future<void> createPoll({
     required String question,
     required List<String> options,
     bool allowMultiple = false,
-  }) {
+  }) async {
+    final client = _client;
+    final currentUserId = client?.auth.currentUser?.id;
+
+    if (client != null && currentUserId != null) {
+      try {
+        final pollRes = await client.from('polls').insert({
+          'trip_id': tripId,
+          'question': question,
+          'is_multiple_choice': allowMultiple,
+          'created_by': currentUserId,
+        }).select().single();
+
+        final pollId = pollRes['id'] as String;
+
+        final optionsToInsert = options.map((opt) => {
+          'poll_id': pollId,
+          'text': opt,
+        }).toList();
+
+        await client.from('poll_options').insert(optionsToInsert);
+        await loadPolls();
+        return;
+      } catch (e) {
+        debugPrint('[VotingNotifier] Error creating poll on Supabase: $e');
+      }
+    }
+
+    // Local / Demo Mode write
     final pollId = _uuid.v4();
-    final poll = PollEntity(
+    final newPoll = PollEntity(
       id: pollId,
       tripId: tripId,
       question: question,
       allowMultiple: allowMultiple,
-      createdBy: MockData.currentUser.id,
+      isActive: true,
+      createdBy: currentUserId ?? MockData.currentUser.id,
       createdByName: MockData.currentUser.displayName,
       createdAt: DateTime.now(),
       options: options.asMap().entries.map((e) => PollOptionEntity(
@@ -29,57 +122,76 @@ class VotingNotifier extends StateNotifier<List<PollEntity>> {
         pollId: pollId,
         optionText: e.value,
         sortOrder: e.key,
+        votes: [],
       )).toList(),
     );
-    state = [poll, ...state];
+
+    state = [newPoll, ...state];
   }
 
-  void vote(String pollId, String optionId) {
-    state = state.map((poll) {
-      if (poll.id != pollId) return poll;
+  Future<void> vote(String pollId, String optionId) async {
+    final client = _client;
+    final currentUserId = client?.auth.currentUser?.id ?? MockData.currentUser.id;
+    final currentUserName = MockData.currentUser.displayName;
 
-      final updatedOptions = poll.options.map((option) {
-        // Remove existing vote from this user on other options (if not multi-select)
-        var votes = option.votes.where((v) => v.userId != MockData.currentUser.id).toList();
+    // Optimistic local update
+    state = state.map((p) {
+      if (p.id != pollId) return p;
 
-        if (option.id == optionId) {
-          // Check if user already voted for this option
-          final alreadyVoted = option.votes.any((v) => v.userId == MockData.currentUser.id);
-          if (!alreadyVoted) {
-            votes = [
-              ...votes,
-              PollVoteEntity(
-                id: _uuid.v4(),
-                optionId: optionId,
-                userId: MockData.currentUser.id,
-                userName: MockData.currentUser.displayName,
-              ),
-            ];
-          }
-        } else if (poll.allowMultiple) {
-          // Keep existing votes on other options for multi-select
-          votes = option.votes.toList();
-          if (option.id == optionId) {
-            votes.add(PollVoteEntity(
+      final updatedOptions = p.options.map((opt) {
+        if (!p.allowMultiple && opt.id != optionId) {
+          // Remove previous vote if single choice
+          final filtered = opt.votes.where((v) => v.userId != currentUserId).toList();
+          return opt.copyWith(votes: filtered);
+        }
+
+        if (opt.id == optionId) {
+          final alreadyVoted = opt.votes.any((v) => v.userId == currentUserId);
+          if (alreadyVoted) {
+            final filtered = opt.votes.where((v) => v.userId != currentUserId).toList();
+            return opt.copyWith(votes: filtered);
+          } else {
+            final newVote = PollVoteEntity(
               id: _uuid.v4(),
-              optionId: optionId,
-              userId: MockData.currentUser.id,
-              userName: MockData.currentUser.displayName,
-            ));
+              optionId: opt.id,
+              userId: currentUserId,
+              userName: currentUserName,
+            );
+            return opt.copyWith(votes: [...opt.votes, newVote]);
           }
         }
 
-        return PollOptionEntity(
-          id: option.id,
-          pollId: option.pollId,
-          optionText: option.optionText,
-          sortOrder: option.sortOrder,
-          votes: votes,
-        );
+        return opt;
       }).toList();
 
-      return poll.copyWith(options: updatedOptions);
+      return p.copyWith(options: updatedOptions);
     }).toList();
+
+    if (client != null && client.auth.currentUser != null) {
+      try {
+        final poll = state.firstWhere((p) => p.id == pollId);
+        if (!poll.allowMultiple) {
+          final optionIds = poll.options.map((o) => o.id).toList();
+          await client
+              .from('poll_votes')
+              .delete()
+              .eq('user_id', currentUserId)
+              .inFilter('option_id', optionIds);
+        }
+
+        final option = poll.options.firstWhere((o) => o.id == optionId);
+        final alreadyVoted = option.votes.any((v) => v.userId == currentUserId);
+
+        if (!alreadyVoted) {
+          await client.from('poll_votes').insert({
+            'option_id': optionId,
+            'user_id': currentUserId,
+          });
+        }
+      } catch (e) {
+        debugPrint('[VotingNotifier] Error voting on Supabase: $e');
+      }
+    }
   }
 
   void closePoll(String pollId) {
